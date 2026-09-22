@@ -1,0 +1,5 @@
+business problem and domain understanding
+technical architecture and code quality
+database design security data intragity
+inorvation ai intergration
+production readiness and scalablity
