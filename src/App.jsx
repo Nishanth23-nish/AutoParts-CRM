@@ -4,7 +4,7 @@ const STORAGE_KEY = "autoforge-crm-leads";
 const INVENTORY_STORAGE_KEY = "autoforge-crm-inventory";
 const COMMUNICATION_STORAGE_KEY = "autoforge-crm-communications";
 const AUTH_STORAGE_KEY = "autoforge-crm-auth";
-const API_BASE = "http://127.0.0.1:4000/api";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:4000/api";
 
 async function apiRequest(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
