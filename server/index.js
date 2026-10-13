@@ -10,6 +10,8 @@ const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN || "";
 const twilioWhatsAppFrom = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
 const twilioContentSid = process.env.TWILIO_CONTENT_SID || "";
 const twilioTrialMode = process.env.TWILIO_TRIAL_MODE !== "false";
+const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
+const ollamaModel = process.env.OLLAMA_MODEL || "llama3.1";
 const communicationClients = new Set();
 const pendingWhatsAppReplies = new Map();
 
@@ -80,6 +82,38 @@ function communicationFromBody(body, id) {
     message: body.message || "",
     nextAction: body.nextAction || "Follow-up saved",
     createdAt: body.createdAt || new Date().toISOString()
+  };
+}
+
+function extractJsonObject(text = "") {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) {
+    throw new Error("Ollama did not return JSON.");
+  }
+
+  return JSON.parse(match[0]);
+}
+
+function normalizeAiDraft(draft = {}, fallbackDraft = {}) {
+  return {
+    customer: draft.customer || fallbackDraft.customer || "",
+    contact: draft.contact || fallbackDraft.contact || "",
+    value: draft.value !== undefined ? String(draft.value || "") : String(fallbackDraft.value || ""),
+    phone: draft.phone || fallbackDraft.phone || "",
+    email: draft.email || fallbackDraft.email || "",
+    color: draft.color || fallbackDraft.color || "",
+    budget: draft.budget || fallbackDraft.budget || "Under 5K",
+    paymentType: draft.paymentType || fallbackDraft.paymentType || "Cash",
+    paymentStatus: draft.paymentStatus || fallbackDraft.paymentStatus || "Pending",
+    amountPaid: draft.amountPaid !== undefined ? String(draft.amountPaid || "") : String(fallbackDraft.amountPaid || ""),
+    paymentReference: draft.paymentReference || fallbackDraft.paymentReference || "",
+    paymentDueDate: draft.paymentDueDate || fallbackDraft.paymentDueDate || "",
+    source: draft.source || fallbackDraft.source || "WhatsApp",
+    followup: draft.followup || fallbackDraft.followup || "Today",
+    quantity: draft.quantity !== undefined ? String(draft.quantity || "") : String(fallbackDraft.quantity || ""),
+    requirementSummary: draft.requirementSummary || fallbackDraft.requirementSummary || "No clear requirement detected yet.",
+    confidence: draft.confidence || fallbackDraft.confidence || "Needs review",
+    notes: draft.notes || fallbackDraft.notes || ""
   };
 }
 
@@ -359,6 +393,80 @@ async function sendTwilioWhatsAppMessage({ to, message, contentSid }) {
 
   throw new Error(`Twilio send failed: ${errorText}`);
 }
+
+app.post("/api/ai/analyze-requirement", async (request, response, next) => {
+  try {
+    const { fallbackDraft = {}, inventory = [], messages = [], replyTarget = null } = request.body || {};
+    const chatTranscript = messages
+      .map((message) => `${message.nextAction === "Incoming customer message" ? "Customer" : "Website"}: ${message.message}`)
+      .join("\n");
+    const inventoryText = inventory
+      .map((item) => `${item.model} | price ${item.price} | specs ${item.colors || "Any"} | stock ${item.stock}`)
+      .join("\n");
+    const prompt = `
+You are an auto parts sales CRM assistant. Analyze the customer chat and return only valid JSON.
+
+Use these exact JSON keys:
+customer, contact, value, phone, email, color, budget, paymentType, paymentStatus, amountPaid, paymentReference, paymentDueDate, source, followup, quantity, requirementSummary, confidence, notes
+
+Allowed budget values: Under 5K, 5K - 10K, 10K - 15K, 15K - 25K, Above 25K.
+Allowed paymentType values: Cash, UPI, Card, Bank Transfer, EMI, Loan, Cheque.
+Allowed paymentStatus values: Pending, Advance Paid, Paid, Refunded.
+Allowed followup values: Today, Tomorrow, Next Week.
+
+Prefer matching contact to one inventory model exactly. Infer common typos, for example "break shues" means brake shoes or brake pads.
+
+Customer/reply target:
+${JSON.stringify(replyTarget)}
+
+Inventory:
+${inventoryText}
+
+Chat:
+${chatTranscript}
+
+Fallback draft to improve:
+${JSON.stringify(fallbackDraft)}
+`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    const ollamaResponse = await fetch(`${ollamaBaseUrl.replace(/\/$/, "")}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: ollamaModel,
+        prompt,
+        stream: false,
+        options: {
+          temperature: 0.1
+        }
+      }),
+      signal: controller.signal
+    }).finally(() => clearTimeout(timeout));
+
+    if (!ollamaResponse.ok) {
+      const errorText = await ollamaResponse.text();
+      response.status(502).json({ error: `Ollama request failed: ${errorText}` });
+      return;
+    }
+
+    const ollamaResult = await ollamaResponse.json();
+    const aiDraft = extractJsonObject(ollamaResult.response || "");
+    response.json({
+      engine: "ollama",
+      model: ollamaModel,
+      draft: normalizeAiDraft(aiDraft, fallbackDraft)
+    });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      response.status(504).json({ error: "Ollama request timed out." });
+      return;
+    }
+
+    next(error);
+  }
+});
 
 app.get("/api/health", (_request, response) => {
   response.json({ ok: true });

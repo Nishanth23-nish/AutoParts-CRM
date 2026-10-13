@@ -1595,6 +1595,7 @@ function CommunicationAppPage({ addIncomingCommunication, communications, invent
   const [chatMessage, setChatMessage] = useState("");
   const [chatToNumber, setChatToNumber] = useState("");
   const [chatStatus, setChatStatus] = useState("");
+  const [aiStatus, setAiStatus] = useState("");
   const [aiDraft, setAiDraft] = useState(null);
   const selectedLead = firstLead;
   const liveChatRecords = communications.slice().reverse();
@@ -1680,7 +1681,7 @@ function CommunicationAppPage({ addIncomingCommunication, communications, invent
     return sameCustomerRecords.slice(-3);
   }
 
-  function analyzeRequirement() {
+  function buildLocalRequirementDraft() {
     const incomingRecords = liveChatRecords.filter((record) => record.nextAction === "Incoming customer message");
     const requirementRecords = getRequirementRecords();
     const latestIncoming = requirementRecords[requirementRecords.length - 1] || incomingRecords[incomingRecords.length - 1];
@@ -1762,7 +1763,33 @@ function CommunicationAppPage({ addIncomingCommunication, communications, invent
       notes
     };
 
-    setAiDraft(draft);
+    return { draft, requirementRecords };
+  }
+
+  async function analyzeRequirement() {
+    const { draft: fallbackDraft, requirementRecords } = buildLocalRequirementDraft();
+
+    setAiStatus("Analyzing with Ollama...");
+    try {
+      const result = await apiRequest("/ai/analyze-requirement", {
+        method: "POST",
+        body: JSON.stringify({
+          fallbackDraft,
+          inventory,
+          messages: requirementRecords,
+          replyTarget
+        })
+      });
+
+      setAiDraft({
+        ...fallbackDraft,
+        ...result.draft
+      });
+      setAiStatus(`Analyzed with Ollama (${result.model || "local model"}).`);
+    } catch (error) {
+      setAiDraft(fallbackDraft);
+      setAiStatus("Ollama is not available, so the built-in analyzer was used.");
+    }
   }
 
   function applyAiDraft() {
@@ -1883,6 +1910,7 @@ function CommunicationAppPage({ addIncomingCommunication, communications, invent
             <button className="primary-action" onClick={analyzeRequirement} type="button">
               Analyze Requirement
             </button>
+            {aiStatus && <div className="ai-engine-status">{aiStatus}</div>}
             {!aiDraft && <div className="empty-filter">Receive a customer requirement in WhatsApp, then analyze it here.</div>}
             {aiDraft && (
               <>
