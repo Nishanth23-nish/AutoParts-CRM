@@ -4,16 +4,10 @@ import { initializeDatabase, pool } from "./db.js";
 
 const app = express();
 const port = Number(process.env.API_PORT || 4000);
-const whatsappVerifyToken = process.env.WHATSAPP_VERIFY_TOKEN || "autoparts_verify_token";
-const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID || "";
-const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN || "";
-const twilioWhatsAppFrom = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
-const twilioContentSid = process.env.TWILIO_CONTENT_SID || "";
-const twilioTrialMode = process.env.TWILIO_TRIAL_MODE !== "false";
+const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN || "";
 const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
 const ollamaModel = process.env.OLLAMA_MODEL || "llama3.1";
 const communicationClients = new Set();
-const pendingWhatsAppReplies = new Map();
 
 app.use(cors());
 app.use(express.json());
@@ -108,7 +102,7 @@ function normalizeAiDraft(draft = {}, fallbackDraft = {}) {
     amountPaid: draft.amountPaid !== undefined ? String(draft.amountPaid || "") : String(fallbackDraft.amountPaid || ""),
     paymentReference: draft.paymentReference || fallbackDraft.paymentReference || "",
     paymentDueDate: draft.paymentDueDate || fallbackDraft.paymentDueDate || "",
-    source: draft.source || fallbackDraft.source || "WhatsApp",
+    source: draft.source || fallbackDraft.source || "Telegram",
     followup: draft.followup || fallbackDraft.followup || "Today",
     quantity: draft.quantity !== undefined ? String(draft.quantity || "") : String(fallbackDraft.quantity || ""),
     requirementSummary: draft.requirementSummary || fallbackDraft.requirementSummary || "No clear requirement detected yet.",
@@ -117,67 +111,40 @@ function normalizeAiDraft(draft = {}, fallbackDraft = {}) {
   };
 }
 
-function extractWhatsAppMessage(body) {
-  if (body.From || body.Body) {
-    return {
-      phone: body.From || "",
-      message: body.Body || ""
-    };
-  }
-
-  if (body.phone || body.message) {
-    return {
-      phone: body.phone || "",
-      message: body.message || ""
-    };
-  }
-
-  const change = body.entry?.[0]?.changes?.[0]?.value;
-  const message = change?.messages?.[0];
-  const contact = change?.contacts?.[0];
-
-  if (!message) {
-    return { phone: "", message: "" };
-  }
-
+function extractTelegramMessage(body) {
+  const message = body.message || body.edited_message || body.channel_post;
+  const chat = message?.chat;
+  const from = message?.from || {};
   const text =
-    message.text?.body ||
-    message.button?.text ||
-    message.interactive?.button_reply?.title ||
-    message.interactive?.list_reply?.title ||
-    `[${message.type || "message"} received]`;
+    message?.text ||
+    message?.caption ||
+    message?.contact?.phone_number ||
+    (message?.location ? "[location shared]" : "");
+
+  if (!message || !chat?.id) {
+    return { chatId: "", message: "", customer: "" };
+  }
+
+  const displayName =
+    [from.first_name, from.last_name].filter(Boolean).join(" ") ||
+    from.username ||
+    chat.title ||
+    `Telegram ${String(chat.id).slice(-4)}`;
 
   return {
-    phone: message.from || contact?.wa_id || "",
-    message: text
+    chatId: String(chat.id),
+    message: text || `[${message.new_chat_members ? "member update" : "message received"}]`,
+    customer: displayName
   };
 }
 
-function formatWhatsAppNumber(value = "") {
-  if (value.startsWith("whatsapp:")) {
-    return value;
+function formatTelegramChatId(value = "") {
+  const trimmedValue = String(value).trim();
+  if (trimmedValue.startsWith("telegram:")) {
+    return trimmedValue.replace("telegram:", "");
   }
 
-  const digits = normalizePhone(value);
-  if (!digits) {
-    return "";
-  }
-
-  const phoneWithCountryCode = digits.length === 10 ? `91${digits}` : digits;
-  return `whatsapp:+${phoneWithCountryCode}`;
-}
-
-function escapeXml(value = "") {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
-function isTwilioWebhook(body) {
-  return Boolean(body.From || body.Body || body.MessageSid);
+  return trimmedValue;
 }
 
 function broadcastCommunication(communication) {
@@ -200,24 +167,24 @@ async function findDuplicateLead(lead) {
   });
 }
 
-async function findOrCreateWhatsAppEnquiry(phone) {
-  const normalizedPhone = normalizePhone(phone);
+async function findOrCreateTelegramEnquiry(chatId, customerName) {
+  const telegramContact = `telegram:${formatTelegramChatId(chatId)}`;
   const [enquiries] = await pool.query("SELECT * FROM component_enquiries ORDER BY id DESC");
-  const existingEnquiry = enquiries.find((item) => normalizePhone(item.phone || "").endsWith(normalizedPhone.slice(-10)));
+  const existingEnquiry = enquiries.find((item) => item.phone === telegramContact);
 
-  if (existingEnquiry || !normalizedPhone) {
+  if (existingEnquiry || !chatId) {
     return existingEnquiry;
   }
 
   const demoEnquiry = {
     id: Date.now(),
-    customer: `WhatsApp Demo ${normalizedPhone.slice(-4)}`,
-    contact: "Twilio Live Chat",
+    customer: customerName || `Telegram ${String(chatId).slice(-4)}`,
+    contact: "Telegram Live Chat",
     stage: "Enquiry",
     followup: "Today",
     value: 0,
     month: "Sep",
-    phone,
+    phone: telegramContact,
     email: "",
     color: "",
     budget: "Under 5K",
@@ -226,8 +193,8 @@ async function findOrCreateWhatsAppEnquiry(phone) {
     amountPaid: 0,
     paymentReference: "",
     paymentDueDate: "",
-    source: "WhatsApp",
-    notes: "Created automatically from an incoming Twilio WhatsApp demo message."
+    source: "Telegram",
+    notes: "Created automatically from an incoming Telegram message."
   };
 
   await pool.query(
@@ -278,120 +245,32 @@ async function saveCommunication(communication) {
   broadcastCommunication(communication);
 }
 
-async function queueWhatsAppReply(phone, message) {
-  const formattedPhone = formatWhatsAppNumber(phone);
-
-  if (!formattedPhone || !message.trim()) {
-    throw new Error("A valid WhatsApp number and queued message are required.");
+async function sendTelegramMessage({ chatId, message }) {
+  if (!telegramBotToken) {
+    throw new Error("Telegram bot token is not configured.");
   }
 
-  pendingWhatsAppReplies.set(formattedPhone, message.trim());
-  await pool.query(
-    `INSERT INTO pending_whatsapp_replies (phone, message)
-     VALUES (?, ?)
-     ON DUPLICATE KEY UPDATE message = VALUES(message), createdAt = CURRENT_TIMESTAMP`,
-    [formattedPhone, message.trim()]
-  );
-
-  return formattedPhone;
-}
-
-async function takeQueuedWhatsAppReply(phone) {
-  const formattedPhone = formatWhatsAppNumber(phone);
-
-  if (!formattedPhone) {
-    return "";
+  const formattedChatId = formatTelegramChatId(chatId);
+  if (!formattedChatId || !message.trim()) {
+    throw new Error("A valid Telegram chat ID and message are required.");
   }
 
-  const memoryReply = pendingWhatsAppReplies.get(formattedPhone);
-  if (memoryReply) {
-    pendingWhatsAppReplies.delete(formattedPhone);
-    await pool.query("DELETE FROM pending_whatsapp_replies WHERE phone = ?", [formattedPhone]);
-    return memoryReply;
-  }
-
-  const [rows] = await pool.query("SELECT message FROM pending_whatsapp_replies WHERE phone = ? LIMIT 1", [formattedPhone]);
-  if (!rows.length) {
-    return "";
-  }
-
-  await pool.query("DELETE FROM pending_whatsapp_replies WHERE phone = ?", [formattedPhone]);
-  return rows[0].message;
-}
-
-async function sendTwilioWhatsAppMessage({ to, message, contentSid }) {
-  if (!twilioAccountSid || !twilioAuthToken) {
-    throw new Error("Twilio credentials are not configured.");
-  }
-
-  const toNumber = formatWhatsAppNumber(to);
-  if (!toNumber || !message.trim()) {
-    throw new Error("A valid WhatsApp number and message are required.");
-  }
-
-  const auth = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString("base64");
-  const selectedContentSid = contentSid || twilioContentSid;
-
-  if (selectedContentSid) {
-    const templateForm = new URLSearchParams({
-      From: twilioWhatsAppFrom,
-      To: toNumber,
-      ContentSid: selectedContentSid,
-      ContentVariables: JSON.stringify({
-        1: new Date().toLocaleDateString("en-IN"),
-        2: message.trim()
-      })
-    });
-    const templateResponse = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${auth}`,
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: templateForm
-      }
-    );
-
-    if (!templateResponse.ok) {
-      throw new Error(`Twilio template send failed: ${await templateResponse.text()}`);
-    }
-
-    return templateResponse.json();
-  }
-
-  const form = new URLSearchParams({
-    From: twilioWhatsAppFrom,
-    To: toNumber,
-    Body: message.trim()
+  const telegramResponse = await fetch(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      chat_id: formattedChatId,
+      text: message.trim()
+    })
   });
-  const twilioResponse = await fetch(
-    `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${auth}`,
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: form
-    }
-  );
 
-  if (twilioResponse.ok) {
-    return twilioResponse.json();
+  if (telegramResponse.ok) {
+    return telegramResponse.json();
   }
 
-  const errorText = await twilioResponse.text();
-  let errorBody = {};
-
-  try {
-    errorBody = JSON.parse(errorText);
-  } catch {
-    errorBody = {};
-  }
-
-  throw new Error(`Twilio send failed: ${errorText}`);
+  throw new Error(`Telegram send failed: ${await telegramResponse.text()}`);
 }
 
 app.post("/api/ai/analyze-requirement", async (request, response, next) => {
@@ -626,86 +505,41 @@ app.post("/api/communications", async (request, response, next) => {
   }
 });
 
-app.post("/api/communications/send-whatsapp", async (request, response, next) => {
+app.post("/api/communications/send-telegram", async (request, response, next) => {
   let communication;
 
   try {
     communication = communicationFromBody({
       ...request.body,
-      channel: "WhatsApp",
+      channel: "Telegram",
       nextAction: "Website reply"
     });
 
     if (!communication.enquiryId || !communication.customer || !communication.component || !communication.message.trim()) {
-      response.status(400).json({ error: "Customer, component, WhatsApp number, and message are required." });
+      response.status(400).json({ error: "Customer, component, Telegram chat ID, and message are required." });
       return;
     }
 
-    if (twilioTrialMode) {
-      await queueWhatsAppReply(request.body.to || request.body.phone, communication.message);
-      await saveCommunication({
-        ...communication,
-        nextAction: "Website reply queued"
-      });
-      response.status(202).json({
-        ...communication,
-        nextAction: "Website reply queued",
-        queued: true
-      });
-      return;
-    }
-
-    await sendTwilioWhatsAppMessage({
-      to: request.body.to || request.body.phone,
-      message: communication.message,
-      contentSid: request.body.contentSid
+    await sendTelegramMessage({
+      chatId: request.body.to || request.body.chatId || request.body.phone,
+      message: communication.message
     });
     await saveCommunication(communication);
     response.status(201).json(communication);
   } catch (error) {
-    const message = error.message || "Twilio send failed.";
-    const canQueueForTrial =
-      communication &&
-      request.body.to &&
-      (message.includes("21654") || message.includes("21655") || message.includes("ContentSid"));
-
-    if (canQueueForTrial) {
-      await queueWhatsAppReply(request.body.to || request.body.phone, communication.message);
-      await saveCommunication({
-        ...communication,
-        nextAction: "Website reply queued"
-      });
-      response.status(202).json({
-        ...communication,
-        nextAction: "Website reply queued",
-        queued: true
-      });
-      return;
-    }
-
-    response.status(502).json({ error: message });
+    response.status(502).json({ error: error.message || "Telegram send failed." });
   }
 });
 
-app.get("/api/webhooks/whatsapp", (request, response) => {
-  const mode = request.query["hub.mode"];
-  const token = request.query["hub.verify_token"];
-  const challenge = request.query["hub.challenge"];
-
-  if (mode === "subscribe" && token === whatsappVerifyToken) {
-    response.status(200).send(challenge);
-    return;
-  }
-
-  response.sendStatus(403);
+app.get("/api/webhooks/telegram", (_request, response) => {
+  response.json({ ok: true, channel: "Telegram" });
 });
 
-app.post("/api/webhooks/whatsapp", async (request, response, next) => {
+app.post("/api/webhooks/telegram", async (request, response, next) => {
   try {
-    const incoming = extractWhatsAppMessage(request.body);
-    const phone = normalizePhone(incoming.phone || "");
+    const incoming = extractTelegramMessage(request.body);
     const message = incoming.message || "";
-    const enquiry = await findOrCreateWhatsAppEnquiry(incoming.phone || phone);
+    const enquiry = await findOrCreateTelegramEnquiry(incoming.chatId, incoming.customer);
 
     if (!enquiry || !message.trim()) {
       response.status(200).json({ received: true, saved: false });
@@ -717,28 +551,15 @@ app.post("/api/webhooks/whatsapp", async (request, response, next) => {
       enquiryId: enquiry.id,
       customer: enquiry.customer,
       component: enquiry.contact,
-      channel: "WhatsApp",
+      channel: "Telegram",
       message: message.trim(),
       nextAction: "Incoming customer message",
-      senderPhone: incoming.phone || phone,
+      senderPhone: `telegram:${incoming.chatId}`,
       createdAt: new Date().toISOString()
     };
 
     await saveCommunication(communication);
-
-    if (isTwilioWebhook(request.body)) {
-      const pendingReply = await takeQueuedWhatsAppReply(incoming.phone || phone);
-
-      if (pendingReply) {
-        response.type("text/xml").status(200).send(`<Response><Message>${escapeXml(pendingReply)}</Message></Response>`);
-        return;
-      }
-
-      response.type("text/xml").status(200).send("<Response></Response>");
-      return;
-    }
-
-    response.status(201).json(request.body.object ? { received: true, saved: true } : communication);
+    response.status(201).json({ received: true, saved: true });
   } catch (error) {
     next(error);
   }

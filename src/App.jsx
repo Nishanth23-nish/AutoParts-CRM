@@ -243,11 +243,11 @@ function AuthPage({ handleLogin, loginError, loginForm, setLoginForm }) {
           <div className="auth-brand-mark">DF</div>
           <p className="eyebrow">Secure CRM Access</p>
           <h1>DevForge AutoParts CRM</h1>
-          <p>Manage component enquiries, WhatsApp conversations, stock, and sales pipeline from one workspace.</p>
+          <p>Manage component enquiries, Telegram conversations, stock, and sales pipeline from one workspace.</p>
           <div className="auth-proof-grid">
             <div>
               <strong>Live chat</strong>
-              <span>Twilio WhatsApp messages in one view</span>
+              <span>Telegram bot messages in one view</span>
             </div>
             <div>
               <strong>Smart leads</strong>
@@ -1030,6 +1030,7 @@ function EnquiriesPage({
               <option>Walk-in</option>
               <option>Website</option>
               <option>Phone</option>
+              <option>Telegram</option>
               <option>Instagram</option>
             </select>
           </label>
@@ -1599,15 +1600,15 @@ function CommunicationAppPage({ addIncomingCommunication, communications, invent
   const [aiDraft, setAiDraft] = useState(null);
   const selectedLead = firstLead;
   const liveChatRecords = communications.slice().reverse();
-  const latestIncomingWhatsApp = communications.find(
+  const latestIncomingTelegram = communications.find(
     (record) => record.nextAction === "Incoming customer message" && record.senderPhone
   );
-  const replyTarget = latestIncomingWhatsApp
+  const replyTarget = latestIncomingTelegram
     ? {
-        enquiryId: latestIncomingWhatsApp.enquiryId,
-        customer: latestIncomingWhatsApp.customer,
-        component: latestIncomingWhatsApp.component,
-        phone: latestIncomingWhatsApp.senderPhone
+        enquiryId: latestIncomingTelegram.enquiryId,
+        customer: latestIncomingTelegram.customer,
+        component: latestIncomingTelegram.component,
+        phone: latestIncomingTelegram.senderPhone
       }
     : selectedLead
       ? {
@@ -1648,7 +1649,7 @@ function CommunicationAppPage({ addIncomingCommunication, communications, invent
     const text = normalizeCustomerText(record.message || "").trim();
     if (!text) return false;
     if (/^(hi+|hello|hey|ok|okay|yes|no|thanks?|thank you|mobile trigger)$/i.test(text)) return false;
-    if (/\b(test|trigger|check|receive|received|ngrok|twilio|join)\b/i.test(text) && text.split(/\s+/).length < 5) {
+    if (/\b(test|trigger|check|receive|received|ngrok|telegram|bot|join)\b/i.test(text) && text.split(/\s+/).length < 5) {
       return false;
     }
 
@@ -1714,13 +1715,13 @@ function CommunicationAppPage({ addIncomingCommunication, communications, invent
           .some((word) => word.length > 3 && normalizedText.includes(word))
       );
     const fallbackComponent =
-      latestIncoming?.component && latestIncoming.component !== "Twilio Live Chat" ? latestIncoming.component : "";
+      latestIncoming?.component && latestIncoming.component !== "Telegram Live Chat" ? latestIncoming.component : "";
     const specs = matchedComponent?.colors
       ? matchedComponent.colors.split(",").map((item) => item.trim()).filter(Boolean)
       : [];
     const matchedSpec = specs.find((spec) => normalizedText.includes(spec.toLowerCase())) || "";
     const inferredPayment = normalizedText.includes("emi") ? "EMI" : normalizedText.includes("loan") ? "Loan" : "Cash";
-    const inferredSource = latestIncoming?.channel === "WhatsApp" ? "Phone" : "Website";
+    const inferredSource = latestIncoming?.channel === "Telegram" ? "Telegram" : "Website";
     const detectedEmail = allText.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i)?.[0] || "";
     const inferredFollowup = normalizedText.includes("next week")
       ? "Next Week"
@@ -1809,13 +1810,13 @@ function CommunicationAppPage({ addIncomingCommunication, communications, invent
       enquiryId: replyTarget.enquiryId,
       customer: replyTarget.customer,
       component: replyTarget.component,
-      channel: "WhatsApp",
+      channel: "Telegram",
       message: chatMessage.trim(),
       nextAction: "Website reply"
     };
 
     try {
-      const sentRecord = await apiRequest("/communications/send-whatsapp", {
+      const sentRecord = await apiRequest("/communications/send-telegram", {
         method: "POST",
         body: JSON.stringify({
           ...record,
@@ -1824,13 +1825,9 @@ function CommunicationAppPage({ addIncomingCommunication, communications, invent
       });
       addIncomingCommunication(sentRecord);
       setChatMessage("");
-      setChatStatus(
-        sentRecord.queued
-          ? "Reply queued for Twilio trial. Send any WhatsApp message from your mobile now, and Twilio will deliver this website reply back to the mobile."
-          : "WhatsApp reply sent through Twilio."
-      );
+      setChatStatus("Telegram reply sent.");
     } catch (error) {
-      setChatStatus(error.message || "Could not send through Twilio. Check Twilio credentials in .env and restart backend.");
+      setChatStatus(error.message || "Could not send through Telegram. Check TELEGRAM_BOT_TOKEN in .env and restart backend.");
     }
   }
 
@@ -1839,7 +1836,7 @@ function CommunicationAppPage({ addIncomingCommunication, communications, invent
       <div className="panel-header">
         <div>
           <h2>Live Communication Chat</h2>
-          <p>Incoming WhatsApp messages appear here automatically while follow-ups stay saved in history.</p>
+          <p>Incoming Telegram messages appear here automatically while follow-ups stay saved in history.</p>
         </div>
       </div>
 
@@ -1847,8 +1844,8 @@ function CommunicationAppPage({ addIncomingCommunication, communications, invent
         <div className="live-chatbox">
           <div className="chatbox-header">
             <div>
-              <h2>Twilio WhatsApp Live Chat</h2>
-              <p>Incoming messages appear instantly. In Twilio trial mode, website replies are delivered after the customer sends the next WhatsApp message.</p>
+              <h2>Telegram Live Chat</h2>
+              <p>Incoming Telegram bot messages appear instantly, and website replies are sent back through your bot.</p>
             </div>
             <span className="badge">Live</span>
           </div>
@@ -1872,7 +1869,7 @@ function CommunicationAppPage({ addIncomingCommunication, communications, invent
                 </div>
               );
             })}
-            {!liveChatRecords.length && <div className="empty-filter">No live WhatsApp messages yet.</div>}
+            {!liveChatRecords.length && <div className="empty-filter">No live Telegram messages yet.</div>}
           </div>
 
           <form className="chat-composer" onSubmit={handleChatReplySubmit}>
@@ -1880,12 +1877,12 @@ function CommunicationAppPage({ addIncomingCommunication, communications, invent
             <input
               className="content-sid-input"
               onChange={(event) => setChatToNumber(event.target.value)}
-              placeholder={`WhatsApp recipient, e.g. ${replyTarget?.phone || "+91 9488245586"}`}
+              placeholder={`Telegram chat ID, e.g. ${replyTarget?.phone || "telegram:123456789"}`}
               value={chatToNumber}
             />
             <input
               onChange={(event) => setChatMessage(event.target.value)}
-              placeholder={replyTarget ? `Type reply to ${replyTarget.customer}` : "Wait for a WhatsApp message or select a customer"}
+              placeholder={replyTarget ? `Type reply to ${replyTarget.customer}` : "Wait for a Telegram message or select a customer"}
               value={chatMessage}
             />
             <button className="primary-action" disabled={!replyTarget || !chatMessage.trim()} type="submit">
@@ -1911,7 +1908,7 @@ function CommunicationAppPage({ addIncomingCommunication, communications, invent
               Analyze Requirement
             </button>
             {aiStatus && <div className="ai-engine-status">{aiStatus}</div>}
-            {!aiDraft && <div className="empty-filter">Receive a customer requirement in WhatsApp, then analyze it here.</div>}
+            {!aiDraft && <div className="empty-filter">Receive a customer requirement in Telegram, then analyze it here.</div>}
             {aiDraft && (
               <>
                 <div className="ai-summary-card">

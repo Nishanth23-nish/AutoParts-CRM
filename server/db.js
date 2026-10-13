@@ -82,13 +82,6 @@ export async function initializeDatabase() {
     )
   `);
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS pending_whatsapp_replies (
-      phone VARCHAR(60) PRIMARY KEY,
-      message TEXT NOT NULL,
-      createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
 }
 
 async function ensureColumn(tableName, columnName, columnDefinition) {
