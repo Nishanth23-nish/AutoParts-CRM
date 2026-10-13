@@ -14,6 +14,10 @@ CREATE TABLE IF NOT EXISTS component_enquiries (
   color VARCHAR(60),
   budget VARCHAR(40),
   paymentType VARCHAR(40),
+  paymentStatus VARCHAR(40),
+  amountPaid INT NOT NULL DEFAULT 0,
+  paymentReference VARCHAR(120),
+  paymentDueDate VARCHAR(40),
   source VARCHAR(40),
   notes TEXT,
   createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP

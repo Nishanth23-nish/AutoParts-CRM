@@ -47,6 +47,10 @@ function leadFromBody(body, id) {
     color: body.color || "",
     budget: body.budget || "Under 5K",
     paymentType: body.paymentType || "Cash",
+    paymentStatus: body.paymentStatus || "Pending",
+    amountPaid: Number(body.amountPaid || 0),
+    paymentReference: body.paymentReference || "",
+    paymentDueDate: body.paymentDueDate || "",
     source: body.source || "Walk-in",
     notes: body.notes || ""
   };
@@ -184,14 +188,18 @@ async function findOrCreateWhatsAppEnquiry(phone) {
     color: "",
     budget: "Under 5K",
     paymentType: "Cash",
+    paymentStatus: "Pending",
+    amountPaid: 0,
+    paymentReference: "",
+    paymentDueDate: "",
     source: "WhatsApp",
     notes: "Created automatically from an incoming Twilio WhatsApp demo message."
   };
 
   await pool.query(
     `INSERT INTO component_enquiries
-      (id, customer, contact, stage, followup, value, month, phone, email, color, budget, paymentType, source, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, customer, contact, stage, followup, value, month, phone, email, color, budget, paymentType, paymentStatus, amountPaid, paymentReference, paymentDueDate, source, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       demoEnquiry.id,
       demoEnquiry.customer,
@@ -205,6 +213,10 @@ async function findOrCreateWhatsAppEnquiry(phone) {
       demoEnquiry.color,
       demoEnquiry.budget,
       demoEnquiry.paymentType,
+      demoEnquiry.paymentStatus,
+      demoEnquiry.amountPaid,
+      demoEnquiry.paymentReference,
+      demoEnquiry.paymentDueDate,
       demoEnquiry.source,
       demoEnquiry.notes
     ]
@@ -375,8 +387,8 @@ app.post("/api/enquiries", async (request, response, next) => {
 
     await pool.query(
       `INSERT INTO component_enquiries
-        (id, customer, contact, stage, followup, value, month, phone, email, color, budget, paymentType, source, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, customer, contact, stage, followup, value, month, phone, email, color, budget, paymentType, paymentStatus, amountPaid, paymentReference, paymentDueDate, source, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         lead.id,
         lead.customer,
@@ -390,6 +402,10 @@ app.post("/api/enquiries", async (request, response, next) => {
         lead.color,
         lead.budget,
         lead.paymentType,
+        lead.paymentStatus,
+        lead.amountPaid,
+        lead.paymentReference,
+        lead.paymentDueDate,
         lead.source,
         lead.notes
       ]
@@ -415,7 +431,8 @@ app.put("/api/enquiries/:id", async (request, response, next) => {
     await pool.query(
       `UPDATE component_enquiries
        SET customer = ?, contact = ?, stage = ?, followup = ?, value = ?, month = ?, phone = ?, email = ?,
-           color = ?, budget = ?, paymentType = ?, source = ?, notes = ?
+           color = ?, budget = ?, paymentType = ?, paymentStatus = ?, amountPaid = ?, paymentReference = ?,
+           paymentDueDate = ?, source = ?, notes = ?
        WHERE id = ?`,
       [
         lead.customer,
@@ -429,6 +446,10 @@ app.put("/api/enquiries/:id", async (request, response, next) => {
         lead.color,
         lead.budget,
         lead.paymentType,
+        lead.paymentStatus,
+        lead.amountPaid,
+        lead.paymentReference,
+        lead.paymentDueDate,
         lead.source,
         lead.notes,
         lead.id

@@ -41,11 +41,20 @@ export async function initializeDatabase() {
       color VARCHAR(60),
       budget VARCHAR(40),
       paymentType VARCHAR(40),
+      paymentStatus VARCHAR(40),
+      amountPaid INT NOT NULL DEFAULT 0,
+      paymentReference VARCHAR(120),
+      paymentDueDate VARCHAR(40),
       source VARCHAR(40),
       notes TEXT,
       createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  await ensureColumn("component_enquiries", "paymentStatus", "VARCHAR(40)");
+  await ensureColumn("component_enquiries", "amountPaid", "INT NOT NULL DEFAULT 0");
+  await ensureColumn("component_enquiries", "paymentReference", "VARCHAR(120)");
+  await ensureColumn("component_enquiries", "paymentDueDate", "VARCHAR(40)");
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS component_inventory (
@@ -80,4 +89,21 @@ export async function initializeDatabase() {
       createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+}
+
+async function ensureColumn(tableName, columnName, columnDefinition) {
+  const [rows] = await pool.query(
+    `SELECT COLUMN_NAME
+       FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = ?
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = ?`,
+    [databaseName, tableName, columnName]
+  );
+
+  if (!rows.length) {
+    const safeTableName = tableName.replace(/`/g, "``");
+    const safeColumnName = columnName.replace(/`/g, "``");
+    await pool.query(`ALTER TABLE \`${safeTableName}\` ADD COLUMN \`${safeColumnName}\` ${columnDefinition}`);
+  }
 }

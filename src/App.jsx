@@ -45,6 +45,10 @@ const initialLeads = [
     color: "Ceramic",
     budget: "Under 5K",
     paymentType: "Cash",
+    paymentStatus: "Pending",
+    amountPaid: 0,
+    paymentReference: "",
+    paymentDueDate: "",
     source: "Website",
     notes: "Needs front brake pad set for compact SUV service."
   },
@@ -61,6 +65,10 @@ const initialLeads = [
     color: "12V 45Ah",
     budget: "5K - 10K",
     paymentType: "EMI",
+    paymentStatus: "Advance Paid",
+    amountPaid: 2500,
+    paymentReference: "EMI-APPROVAL-102",
+    paymentDueDate: "2026-09-30",
     source: "Walk-in",
     notes: "Wants warranty details before quotation."
   },
@@ -77,6 +85,10 @@ const initialLeads = [
     color: "5W-30 Synthetic",
     budget: "Under 5K",
     paymentType: "Cash",
+    paymentStatus: "Paid",
+    amountPaid: 3200,
+    paymentReference: "CASH-0003",
+    paymentDueDate: "",
     source: "Phone",
     notes: "Purchased synthetic oil pack for regular service."
   },
@@ -93,6 +105,10 @@ const initialLeads = [
     color: "16 inch Matte Black",
     budget: "15K - 25K",
     paymentType: "Loan",
+    paymentStatus: "Paid",
+    amountPaid: 18500,
+    paymentReference: "LOAN-7781",
+    paymentDueDate: "",
     source: "Instagram",
     notes: "Requested black alloy wheel set and fitting support."
   },
@@ -109,6 +125,10 @@ const initialLeads = [
     color: "LED Projector",
     budget: "10K - 15K",
     paymentType: "EMI",
+    paymentStatus: "Pending",
+    amountPaid: 0,
+    paymentReference: "",
+    paymentDueDate: "",
     source: "Website",
     notes: "Dropped because preferred color was unavailable."
   }
@@ -141,6 +161,10 @@ const emptyLeadForm = {
   color: "",
   budget: "Under 5K",
   paymentType: "Cash",
+  paymentStatus: "Pending",
+  amountPaid: "",
+  paymentReference: "",
+  paymentDueDate: "",
   source: "Walk-in",
   notes: ""
 };
@@ -437,6 +461,10 @@ function App() {
       color: form.color.trim(),
       budget: form.budget,
       paymentType: form.paymentType,
+      paymentStatus: form.paymentStatus,
+      amountPaid: Number(form.amountPaid || 0),
+      paymentReference: form.paymentReference.trim(),
+      paymentDueDate: form.paymentDueDate,
       source: form.source,
       notes: form.notes.trim()
     };
@@ -508,6 +536,10 @@ function App() {
       color: lead.color || "",
       budget: lead.budget || "Under 5K",
       paymentType: lead.paymentType || "Cash",
+      paymentStatus: lead.paymentStatus || "Pending",
+      amountPaid: String(lead.amountPaid || ""),
+      paymentReference: lead.paymentReference || "",
+      paymentDueDate: lead.paymentDueDate || "",
       source: lead.source || "Walk-in",
       notes: lead.notes || ""
     });
@@ -931,17 +963,67 @@ function EnquiriesPage({
               ))}
             </select>
           </label>
-          <label>
-            Payment Type
-            <select
-              onChange={(event) => setForm({ ...form, paymentType: event.target.value })}
-              value={form.paymentType}
-            >
-              <option>Cash</option>
-              <option>Loan</option>
-              <option>EMI</option>
-            </select>
-          </label>
+          <div className="payment-section full-width-field">
+            <div className="section-heading">
+              <h3>Payment Method</h3>
+              <p>Capture the customer payment plan, paid amount, reference, and due date.</p>
+            </div>
+            <div className="payment-grid">
+              <label>
+                Method
+                <select
+                  onChange={(event) => setForm({ ...form, paymentType: event.target.value })}
+                  value={form.paymentType}
+                >
+                  <option>Cash</option>
+                  <option>UPI</option>
+                  <option>Card</option>
+                  <option>Bank Transfer</option>
+                  <option>EMI</option>
+                  <option>Loan</option>
+                  <option>Cheque</option>
+                </select>
+              </label>
+              <label>
+                Payment Status
+                <select
+                  onChange={(event) => setForm({ ...form, paymentStatus: event.target.value })}
+                  value={form.paymentStatus}
+                >
+                  <option>Pending</option>
+                  <option>Advance Paid</option>
+                  <option>Paid</option>
+                  <option>Refunded</option>
+                </select>
+              </label>
+              <label>
+                Amount Paid
+                <input
+                  min="0"
+                  onChange={(event) => setForm({ ...form, amountPaid: event.target.value })}
+                  placeholder="0"
+                  type="number"
+                  value={form.amountPaid}
+                />
+              </label>
+              <label>
+                Payment Reference
+                <input
+                  onChange={(event) => setForm({ ...form, paymentReference: event.target.value })}
+                  placeholder="UPI / card / receipt ID"
+                  value={form.paymentReference}
+                />
+              </label>
+              <label>
+                Due Date
+                <input
+                  onChange={(event) => setForm({ ...form, paymentDueDate: event.target.value })}
+                  type="date"
+                  value={form.paymentDueDate}
+                />
+              </label>
+            </div>
+          </div>
           <label>
             Enquiry Source
             <select onChange={(event) => setForm({ ...form, source: event.target.value })} value={form.source}>
@@ -1037,7 +1119,11 @@ function EnquiriesPage({
               <span>
                 {lead.color || "Any specification"}
                 <small>
-                  {lead.budget || "No budget"} · {lead.paymentType || "Cash"} · {lead.source || "Walk-in"}
+                  {lead.budget || "No budget"} · {lead.paymentType || "Cash"} · {lead.paymentStatus || "Pending"} · {lead.source || "Walk-in"}
+                </small>
+                <small>
+                  Paid {formatCurrency(Number(lead.amountPaid || 0))}
+                  {lead.paymentReference ? ` · Ref ${lead.paymentReference}` : ""}
                 </small>
               </span>
               <span className={`badge ${stageClass(lead.stage)}`}>{lead.stage}</span>
@@ -1664,6 +1750,10 @@ function CommunicationAppPage({ addIncomingCommunication, communications, invent
       color: matchedSpec,
       budget: matchedComponent ? budgetFromPrice(Number(matchedComponent.price || 0)) : "Under 5K",
       paymentType: inferredPayment,
+      paymentStatus: "Pending",
+      amountPaid: "",
+      paymentReference: "",
+      paymentDueDate: "",
       source: inferredSource,
       followup: inferredFollowup,
       quantity,

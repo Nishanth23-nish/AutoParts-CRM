@@ -752,6 +752,32 @@ h2 {
   grid-column: 1 / -1;
 }
 
+.payment-section {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 14px;
+}
+
+.section-heading h3 {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.section-heading p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.payment-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .lead-table {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1483,6 +1509,7 @@ h2 {
 
   .communication-grid,
   .chat-ai-layout,
+  .payment-grid,
   .workflow-steps {
     grid-template-columns: 1fr;
   }
